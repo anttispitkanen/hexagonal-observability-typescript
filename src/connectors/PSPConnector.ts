@@ -1,10 +1,14 @@
+import { IntegrationError } from './common';
+
 type PSPMakePaymentPayload = {
   orderId: string;
   amount: number;
 };
 
-type PSPMakePaymentFailure = {
+export type PSPMakePaymentFailure = {
   _type: 'failure';
+  _failureType: 'PSPMakePaymentFailure';
+  failure: IntegrationError;
 };
 
 type PSPMakePaymentSuccess = {
@@ -28,7 +32,7 @@ export type PSPConnector = {
 };
 
 export const createPSPConnector = (): PSPConnector => ({
-  makePayment: async (payload) => {
+  makePayment: async (_payload) => {
     return { _type: 'success', transactionId: 'transaction-id-123' };
   },
 });

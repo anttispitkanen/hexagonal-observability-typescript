@@ -1,19 +1,11 @@
+import { Product } from '../types';
 import { IntegrationError } from './common';
 
-type ProductNotFound = {
-  _type: 'productNotFound';
-};
-
-type GetProductFailure = {
+export type GetProductFailure = {
   _type: 'failure';
+  _failureType: 'GetProductFailure';
   productId: string;
-  failure: ProductNotFound | IntegrationError;
-};
-
-type Product = {
-  productId: string;
-  name: string;
-  price: number;
+  failure: IntegrationError;
 };
 
 type GetProductSuccess = {

@@ -1,8 +1,19 @@
 import * as t from 'io-ts';
-import { InventoryConnector } from './connectors/inventoryConnector';
-import { OrderConnector } from './connectors/orderConnector';
-import { ProductConnector } from './connectors/productConnector';
-import { PSPConnector } from './connectors/PSPConnector';
+import {
+  GetInventoryForProductFailure,
+  InventoryConnector,
+} from './connectors/inventoryConnector';
+import {
+  CreateOrderFailure,
+  OrderConnector,
+  RecordPaymentFailure,
+} from './connectors/orderConnector';
+import {
+  GetProductFailure,
+  ProductConnector,
+} from './connectors/productConnector';
+import { PSPConnector, PSPMakePaymentFailure } from './connectors/PSPConnector';
+import { Product } from './types';
 
 /**
  * The io-ts type for the payload needed for creating and paying for an order.
@@ -17,24 +28,28 @@ export const OrderReceivePayload = t.type({
 });
 type OrderReceivePayload = t.TypeOf<typeof OrderReceivePayload>;
 
-// FIXME:
-export type ProductDoesNotExist = {
-  _type: 'productDoesNotExist';
+type OutOfStockFailure = {
+  _type: 'failure';
+  _failureType: 'OutOfStockFailure';
   productId: string;
 };
 
-export type ReceiveOrderFailure = {
-  _type: 'failure';
-  failure: ProductDoesNotExist;
-};
+type HandleOrderFailure =
+  | GetProductFailure
+  | GetInventoryForProductFailure
+  | OutOfStockFailure
+  | CreateOrderFailure
+  | PSPMakePaymentFailure
+  | RecordPaymentFailure;
 
-export type ReceiveOrderSuccess = {
+type HandleOrderSuccess = {
   _type: 'success';
   orderId: string;
-  price: number;
+  transactionId: string;
+  product: Product;
 };
 
-export type ReceiveOrderResponse = ReceiveOrderFailure | ReceiveOrderSuccess;
+type HandleOrderResponse = HandleOrderFailure | HandleOrderSuccess;
 
 export type PayService = {
   /**
@@ -42,10 +57,10 @@ export type PayService = {
    * order. Note that this is agnostic of the transport layer, so it can be called
    * from an HTTP endpoint handler, a message queue handler, a CLI command, or any
    * other way. But since this is the internal part of the hexagon, the input is
-   * assumed to be parsed and schematically valid at this point by the invoking view
-   * layer.
+   * assumed to be parsed by the invoking view layer, and schematically valid at
+   * this point.
    */
-  receiveOrder: (payload: OrderReceivePayload) => Promise<ReceiveOrderResponse>;
+  receiveOrder: (payload: OrderReceivePayload) => Promise<HandleOrderResponse>;
 };
 
 export const createPayService = (
@@ -56,14 +71,6 @@ export const createPayService = (
 ): PayService => ({
   receiveOrder: async (payload) => {
     /**
-     * Then we run a set of business level validations on it, like check that the bought product actually exists and is available.
-     * Then we create the order into our system.
-     * Then we contact a payment service provider (PSP) for handling the monetary transaction. This can be rejected for many reasons at their end, including the customer not having enough money to spend, or the PSP suspecting fraud.
-     * If we get a successful response, we record that to our system.
-     * At the end, we return a response to the customer, probably redirecting them to an order creation page of some sort.
-     */
-
-    /**
      * First we check that the product exists and is available.
      */
     const productResponse = await productConnector.getProduct(
@@ -71,13 +78,10 @@ export const createPayService = (
     );
 
     /**
-     * If the product fetching failed, we return a failure response.
+     * If the product fetching failed, we return the failure response.
      */
     if (productResponse._type === 'failure') {
-      return {
-        _type: 'failure',
-        failure: { _type: 'productDoesNotExist', productId: payload.productId },
-      };
+      return productResponse;
     }
 
     /**
@@ -91,17 +95,20 @@ export const createPayService = (
      * If the inventory fetching failed, we return a failure response.
      */
     if (inventoryResponse._type === 'failure') {
-      return {
-        _type: 'failure',
-      };
+      return inventoryResponse;
     }
 
     /**
-     * If the product is not available, we return a failure response.
+     * If the product is not available, we return a failure response. Note that
+     * this is a business logic level failure: from the connector's point of view,
+     * fetching the inventory level succeeded, and it's up to the service to do
+     * whatever with that information.
      */
     if (inventoryResponse.inventoryAmount < 1) {
       return {
         _type: 'failure',
+        _failureType: 'OutOfStockFailure',
+        productId: productResponse.product.productId,
       };
     }
 
@@ -118,9 +125,7 @@ export const createPayService = (
      * If the order creation failed, we return a failure response.
      */
     if (orderResponse._type === 'failure') {
-      return {
-        _type: 'failure',
-      };
+      return orderResponse;
     }
 
     /**
@@ -132,15 +137,14 @@ export const createPayService = (
     });
 
     if (pspResponse._type === 'failure') {
-      return {
-        _type: 'failure',
-      };
+      return pspResponse;
     }
 
     /**
-     * Then we record the payment to our system.
+     * Then we record the successful payment to our system. Note that here we
+     * could also use the different failure types to determine if we should e.g.
+     * retry recording the payment response, or cancelling the payment to the PSP.
      */
-
     const recordPaymentResponse = await orderConnector.recordPaymentForOrder(
       orderResponse.orderId,
       pspResponse.transactionId,
@@ -148,9 +152,7 @@ export const createPayService = (
     );
 
     if (recordPaymentResponse._type === 'failure') {
-      return {
-        _type: 'failure',
-      };
+      return recordPaymentResponse;
     }
 
     /**
@@ -159,7 +161,8 @@ export const createPayService = (
     return {
       _type: 'success',
       orderId: orderResponse.orderId,
-      price: productResponse.product.price,
+      transactionId: pspResponse.transactionId,
+      product: productResponse.product,
     };
   },
 });

@@ -1,3 +1,5 @@
+import { IntegrationError } from './common';
+
 type CreateOrderPayload = {
   productId: string;
   price: number;
@@ -8,23 +10,31 @@ type CreateOrderPayload = {
   };
 };
 
-type CreateOrderFailure = {
+export type CreateOrderFailure = {
   _type: 'failure';
+  _failureType: 'CreateOrderFailure';
+  failure: IntegrationError;
 };
 
 type CreateOrderSuccess = {
   _type: 'success';
   orderId: string;
+  price: number;
 };
 
 type CreateOrderResponse = CreateOrderFailure | CreateOrderSuccess;
 
-type RecordPaymentFailure = {
+export type RecordPaymentFailure = {
   _type: 'failure';
+  _failureType: 'RecordPaymentFailure';
+  failure: IntegrationError;
 };
 
 type RecordPaymentSuccess = {
   _type: 'success';
+  orderId: string;
+  transactionId: string;
+  amount: number;
 };
 
 type RecordPaymentResponse = RecordPaymentFailure | RecordPaymentSuccess;
@@ -53,12 +63,12 @@ export const createOrderConnector = (): OrderConnector => ({
   createOrder: async (payload: CreateOrderPayload) => {
     // Here we would create the order, probably in the database, and return whatever
     // the business logic requires us to return.
-    return { _type: 'success', orderId: '123' };
+    return { _type: 'success', orderId: '123', price: payload.price };
   },
 
   recordPaymentForOrder: async (orderId, transactionId, amount) => {
     // Here we would record the payment, probably in the database, and return whatever
     // the business logic requires us to return.
-    return { _type: 'success' };
+    return { _type: 'success', orderId, transactionId, amount };
   },
 });

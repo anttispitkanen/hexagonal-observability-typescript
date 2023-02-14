@@ -1,9 +1,15 @@
-type GetInventoryForProductFailure = {
+import { IntegrationError } from './common';
+
+export type GetInventoryForProductFailure = {
   _type: 'failure';
+  _failureType: 'GetInventoryForProductFailure';
+  productId: string;
+  failure: IntegrationError;
 };
 
 type GetInventoryForProductSuccess = {
   _type: 'success';
+  productId: string;
   inventoryAmount: number;
 };
 
@@ -24,6 +30,6 @@ export type InventoryConnector = {
 export const createInventoryConnector = (): InventoryConnector => ({
   getInventoryForProduct: async (productId) => {
     // Here we would read the inventory level, probably from a database or a cache.
-    return { _type: 'success', inventoryAmount: 10 };
+    return { _type: 'success', productId, inventoryAmount: 10 };
   },
 });
