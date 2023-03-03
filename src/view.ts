@@ -1,7 +1,6 @@
 import * as E from 'fp-ts/lib/Either';
 import express from 'express';
 import { createPayService, OrderReceivePayload } from './service';
-import { createProductConnector } from './connectors/productConnector';
 import { createInventoryConnector } from './connectors/inventoryConnector';
 import { createOrderConnector } from './connectors/orderConnector';
 import { createPSPConnector } from './connectors/PSPConnector';
@@ -23,10 +22,9 @@ app.post('/api/payment', async (req, res) => {
    * Instantiate the service and the connectors, and inject them into the service.
    */
   const payService = createPayService(
-    createProductConnector(),
     createInventoryConnector(),
-    createOrderConnector(),
     createPSPConnector(),
+    createOrderConnector(),
   );
 
   const response = await payService.receiveOrder(orderReceivePayload.right);
@@ -73,17 +71,11 @@ app.post('/api/payment', async (req, res) => {
       case 'PSPMakePaymentFailure':
         console.error({ msg: 'Failed to make payment', response });
         break;
-      case 'GetProductFailure':
-        console.error({ msg: 'Failed to get product', response });
-        break;
       case 'GetInventoryForProductFailure':
         console.error({ msg: 'Failed to get inventory', response });
         break;
       case 'CreateOrderFailure':
         console.error({ msg: 'Failed to create order', response });
-        break;
-      case 'RecordPaymentFailure':
-        console.error({ msg: 'Failed to record payment', response });
         break;
       default:
         return assertUnreachable(response);

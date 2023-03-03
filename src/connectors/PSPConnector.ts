@@ -1,17 +1,27 @@
 import { IntegrationError } from './common';
 
-type PSPMakePaymentPayload = {
-  orderId: string;
-  amount: number;
+type InsufficientFundsFailure = {
+  _type: 'failure';
+  _failureType: 'InsufficientFundsFailure';
+  errorMessage: string;
+};
+
+type FraudSuspectedFailure = {
+  _type: 'failure';
+  _failureType: 'FraudSuspectedFailure';
+  errorMessage: string;
 };
 
 /**
- * TODO: should a failed payment be a failure here, or on the business logic level?
+ * The payment can fail for various reasons, like the customer not having enough
+ * available funds to spend, or the PSP rejecting the payment for fraud, both
+ * after successfully communicating with the PSP. It can also fail due to an
+ * integration error preventing the communication at all.
  */
 export type PSPMakePaymentFailure = {
   _type: 'failure';
   _failureType: 'PSPMakePaymentFailure';
-  failure: IntegrationError;
+  failure: InsufficientFundsFailure | FraudSuspectedFailure | IntegrationError;
 };
 
 type PSPMakePaymentSuccess = {
@@ -29,13 +39,11 @@ export type PSPConnector = {
    * level errors like the PSP being down, or our app not being able to reach the
    * network.
    */
-  makePayment: (
-    payload: PSPMakePaymentPayload,
-  ) => Promise<PSPMakePaymentResponse>;
+  makePayment: (amount: number) => Promise<PSPMakePaymentResponse>;
 };
 
 export const createPSPConnector = (): PSPConnector => ({
-  makePayment: async (_payload) => {
+  makePayment: async (_amount) => {
     return { _type: 'success', transactionId: 'transaction-id-123' };
   },
 });

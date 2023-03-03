@@ -6,25 +6,16 @@ import {
 import {
   CreateOrderFailure,
   OrderConnector,
-  RecordPaymentFailure,
 } from './connectors/orderConnector';
-import {
-  GetProductFailure,
-  ProductConnector,
-} from './connectors/productConnector';
 import { PSPConnector, PSPMakePaymentFailure } from './connectors/PSPConnector';
-import { Product } from './types';
+import { Customer, Product } from './types';
 
 /**
  * The io-ts type for the payload needed for creating and paying for an order.
  */
 export const OrderReceivePayload = t.type({
-  productId: t.string,
-  customer: t.type({
-    name: t.string,
-    email: t.string,
-    address: t.string,
-  }),
+  product: Product,
+  customer: Customer,
 });
 type OrderReceivePayload = t.TypeOf<typeof OrderReceivePayload>;
 
@@ -35,18 +26,17 @@ type OutOfStockFailure = {
 };
 
 type HandleOrderFailure =
-  | GetProductFailure
   | GetInventoryForProductFailure
   | OutOfStockFailure
   | CreateOrderFailure
-  | PSPMakePaymentFailure
-  | RecordPaymentFailure;
+  | PSPMakePaymentFailure;
 
 type HandleOrderSuccess = {
   _type: 'success';
   orderId: string;
   transactionId: string;
   product: Product;
+  customer: Customer;
 };
 
 type HandleOrderResponse = HandleOrderFailure | HandleOrderSuccess;
@@ -64,31 +54,16 @@ export type PayService = {
 };
 
 export const createPayService = (
-  productConnector: ProductConnector,
   inventoryConnector: InventoryConnector,
-  orderConnector: OrderConnector,
   pspConnector: PSPConnector,
+  orderConnector: OrderConnector,
 ): PayService => ({
-  receiveOrder: async (payload) => {
+  receiveOrder: async ({ product, customer }) => {
     /**
-     * First we check that the product exists and is available.
-     */
-    const productResponse = await productConnector.getProduct(
-      payload.productId,
-    );
-
-    /**
-     * If the product fetching failed, we return the failure response.
-     */
-    if (productResponse._type === 'failure') {
-      return productResponse;
-    }
-
-    /**
-     * Then we check that the product is available in the inventory.
+     * First check if the product is available in the inventory.
      */
     const inventoryResponse = await inventoryConnector.getInventoryForProduct(
-      productResponse.product.productId,
+      product.productId,
     );
 
     /**
@@ -108,17 +83,27 @@ export const createPayService = (
       return {
         _type: 'failure',
         _failureType: 'OutOfStockFailure',
-        productId: productResponse.product.productId,
+        productId: product.productId,
       };
     }
 
     /**
-     * Then we create the order into our system.
+     * Then we try to make the payment to the PSP.
+     */
+    const pspResponse = await pspConnector.makePayment(product.price);
+
+    if (pspResponse._type === 'failure') {
+      return pspResponse;
+    }
+
+    /**
+     * Then we create the order into our system with the successful payment's reference.
      */
     const orderResponse = await orderConnector.createOrder({
-      productId: productResponse.product.productId,
-      price: productResponse.product.price,
-      customer: payload.customer,
+      productId: product.productId,
+      price: product.price,
+      paymentTransactionId: pspResponse.transactionId,
+      customer: customer,
     });
 
     /**
@@ -129,40 +114,14 @@ export const createPayService = (
     }
 
     /**
-     * Then we try to make the payment to the PSP.
-     */
-    const pspResponse = await pspConnector.makePayment({
-      orderId: orderResponse.orderId,
-      amount: productResponse.product.price,
-    });
-
-    if (pspResponse._type === 'failure') {
-      return pspResponse;
-    }
-
-    /**
-     * Then we record the successful payment to our system. Note that here we
-     * could also use the different failure types to determine if we should e.g.
-     * retry recording the payment response, or cancelling the payment to the PSP.
-     */
-    const recordPaymentResponse = await orderConnector.recordPaymentForOrder(
-      orderResponse.orderId,
-      pspResponse.transactionId,
-      productResponse.product.price,
-    );
-
-    if (recordPaymentResponse._type === 'failure') {
-      return recordPaymentResponse;
-    }
-
-    /**
      * Return the success response at the end if we get this far.
      */
     return {
       _type: 'success',
       orderId: orderResponse.orderId,
       transactionId: pspResponse.transactionId,
-      product: productResponse.product,
+      product: product,
+      customer: customer,
     };
   },
 });
