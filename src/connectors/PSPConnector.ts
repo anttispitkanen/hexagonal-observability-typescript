@@ -5,6 +5,9 @@ type PSPMakePaymentPayload = {
   amount: number;
 };
 
+/**
+ * TODO: should a failed payment be a failure here, or on the business logic level?
+ */
 export type PSPMakePaymentFailure = {
   _type: 'failure';
   _failureType: 'PSPMakePaymentFailure';
