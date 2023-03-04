@@ -1,24 +1,4 @@
 /**
- * We manged to call a database, but got an error response.
- */
-type DatabaseError = {
-  _type: 'failure';
-  _failureType: 'DatabaseError';
-  errorMessage: string;
-  error: Error;
-};
-
-/**
- * We managed to call an API, but got an error response.
- */
-type HttpResponseError = {
-  _type: 'failure';
-  _failureType: 'HttpResponseError';
-  statusCode: number;
-  errorMessage: string;
-};
-
-/**
  * We had a connection error when trying to call an API or database over the wire.
  */
 type ConnectionError = {
@@ -29,11 +9,26 @@ type ConnectionError = {
 };
 
 /**
- * A generic error about integrating to an external system, like a database or
- * an HTTP API.
+ * We manged to call a database, but got an error response, from
+ * e.g. a constraint violation.
  */
-export type IntegrationError = {
+type DatabaseInternalError = {
   _type: 'failure';
-  _failureType: 'IntegrationError';
-  failure: DatabaseError | HttpResponseError | ConnectionError;
+  _failureType: 'DatabaseError';
+  errorMessage: string;
+  error: Error;
 };
+
+export type DatabaseConnectionError = DatabaseInternalError | ConnectionError;
+
+/**
+ * We managed to call an HTTP API, but got an HTTP error response.
+ */
+type HttpResponseError = {
+  _type: 'failure';
+  _failureType: 'HttpResponseError';
+  statusCode: number;
+  errorMessage: string;
+};
+
+export type HttpApiError = HttpResponseError | ConnectionError;

@@ -1,13 +1,22 @@
 import * as E from 'fp-ts/lib/Either';
-import express from 'express';
+import { RequestHandler } from 'express';
 import { createPayService, OrderReceivePayload } from './service';
 import { createInventoryConnector } from './connectors/inventoryConnector';
 import { createOrderConnector } from './connectors/orderConnector';
 import { createPSPConnector } from './connectors/PSPConnector';
+import { assertUnreachable } from './utils';
+import winston from 'winston';
 
-const app = express();
+const logger = winston.createLogger({
+  level: 'info',
+  format: winston.format.simple(),
+  transports: [new winston.transports.Console()],
+});
 
-app.post('/api/payment', async (req, res) => {
+/**
+ * This is an HTTP/Express specific view implementation for the payment logic.
+ */
+export const paymentHandler: RequestHandler = async (req, res) => {
   /**
    * Here we need to parse the request body to make sure the incoming dat is valid,
    * and reject the request if that's not the case.
@@ -15,6 +24,7 @@ app.post('/api/payment', async (req, res) => {
   const orderReceivePayload = OrderReceivePayload.decode(req.body);
   if (E.isLeft(orderReceivePayload)) {
     res.status(400).send('Invalid request');
+    logger.info('Invalid request input', orderReceivePayload.left);
     return;
   }
 
@@ -58,24 +68,93 @@ app.post('/api/payment', async (req, res) => {
      * Then for the second concern, we want to log and report the failure to the
      * monitoring system with as much granularity as possible, and with appropriate
      * levels of urgency.
+     *
+     * This is a horrible nested switch case that you could definitely write in
+     * a nicer way, but for the sake of example everything is here now.
+     *
+     * Note that each switch statement ends with the default branch returning
+     * assertUnreachable, which makes the compiler error unless all the different
+     * outcomes are handled explicitly.
      */
 
     switch (response._failureType) {
-      /**
-       * If we had an expected error such as a product not being available, we can
-       * log it as a warning, as it should not be a cause for concern.
-       */
-      case 'OutOfStockFailure':
-        console.warn({ msg: 'Product out of stock', response });
-        break;
-      case 'PSPMakePaymentFailure':
-        console.error({ msg: 'Failed to make payment', response });
-        break;
       case 'GetInventoryForProductFailure':
-        console.error({ msg: 'Failed to get inventory', response });
+        switch (response.failure._failureType) {
+          /**
+           * If the product was not found, maybe someone is just sending something
+           * silly into our API, so we can log it as a warning...
+           */
+          case 'ProductNotFoundFailure':
+            logger.warn(
+              `Product not found for ID ${response.failure.productId}`,
+              response,
+            );
+            break;
+          /**
+           * ...but if we failed to read the inventory at all, something is wrong
+           * in our system.
+           */
+          case 'ConnectionError':
+          case 'DatabaseError':
+            logger.error(
+              `Failed to get inventory due to ${response.failure._failureType}`,
+              response,
+            );
+            break;
+          default:
+            return assertUnreachable(response.failure);
+        }
         break;
+
+      case 'OutOfStockFailure':
+        /**
+         * If we had an expected error such as a product not being available, we can
+         * log it as a warning or even info, as it should not be a cause for concern.
+         */
+        logger.warn(
+          `Product out of stock for ID ${response.productId}`,
+          response,
+        );
+        break;
+
+      case 'PSPMakePaymentFailure':
+        switch (response.failure._failureType) {
+          /**
+           * If the payment failed due to insufficient funds or fraud suspicion, that's
+           * not a cause for concern...
+           */
+          case 'InsufficientFundsFailure':
+          case 'FraudSuspectedFailure':
+            logger.warn(
+              `Payment rejected by PSP due to ${response.failure._failureType}`,
+              response,
+            );
+            break;
+          /**
+           * ...but if we failed to reach the PSP, that's a cause for concern, as we may
+           * have e.g. network issues or expired API keys.
+           */
+          case 'ConnectionError':
+          case 'HttpResponseError':
+            logger.error(
+              `Payment failed due to ${response.failure._failureType}`,
+              response,
+            );
+            break;
+          default:
+            return assertUnreachable(response.failure);
+        }
+        break;
+
       case 'CreateOrderFailure':
-        console.error({ msg: 'Failed to create order', response });
+        /**
+         * Failing to create order indicates a problem in our system, so log an
+         * error when that happens.
+         */
+        logger.error(
+          `Failed to create order for transaction ID ${response.paymentTransactionId}`,
+          response,
+        );
         break;
       default:
         return assertUnreachable(response);
@@ -88,11 +167,7 @@ app.post('/api/payment', async (req, res) => {
       .json({ orderId: response.orderId, product: response.product });
 
     // Also report the success.
-    console.log({ msg: 'Handled order successfully', response });
+    logger.info('Handled order successfully', response);
     return;
   }
-});
-
-app.listen(3000, () => {
-  console.log('Listening on port 3000!');
-});
+};

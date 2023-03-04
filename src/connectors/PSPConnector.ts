@@ -1,4 +1,4 @@
-import { IntegrationError } from './common';
+import { HttpApiError } from './common';
 
 type InsufficientFundsFailure = {
   _type: 'failure';
@@ -12,16 +12,10 @@ type FraudSuspectedFailure = {
   errorMessage: string;
 };
 
-/**
- * The payment can fail for various reasons, like the customer not having enough
- * available funds to spend, or the PSP rejecting the payment for fraud, both
- * after successfully communicating with the PSP. It can also fail due to an
- * integration error preventing the communication at all.
- */
 export type PSPMakePaymentFailure = {
   _type: 'failure';
   _failureType: 'PSPMakePaymentFailure';
-  failure: InsufficientFundsFailure | FraudSuspectedFailure | IntegrationError;
+  failure: InsufficientFundsFailure | FraudSuspectedFailure | HttpApiError;
 };
 
 type PSPMakePaymentSuccess = {
@@ -33,11 +27,13 @@ type PSPMakePaymentResponse = PSPMakePaymentFailure | PSPMakePaymentSuccess;
 
 export type PSPConnector = {
   /**
-   * Make the payment request to the PSP, probably over and HTTP API. Failure
-   * modes can include the PSP rejecting the payment for various reasons, like
-   * the customer not having enough balance or fraud suspicion, or integration
-   * level errors like the PSP being down, or our app not being able to reach the
-   * network.
+   * Make the payment request to the PSP, probably over and HTTP API.
+   *
+   * The payment can fail for various reasons, like the customer not having enough
+   * available funds to spend, or the PSP rejecting the payment for fraud, both
+   * after successfully communicating with the PSP (let's assume the responses would
+   * be in the HTTP 2XX-3XX series in that case as well). It can also fail due to an
+   * HTTP API error preventing the communication at all.
    */
   makePayment: (amount: number) => Promise<PSPMakePaymentResponse>;
 };

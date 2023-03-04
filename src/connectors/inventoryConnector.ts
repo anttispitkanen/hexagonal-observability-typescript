@@ -1,10 +1,16 @@
-import { IntegrationError } from './common';
+import { DatabaseConnectionError } from './common';
+
+type ProductNotFoundFailure = {
+  _type: 'failure';
+  _failureType: 'ProductNotFoundFailure';
+  productId: string;
+};
 
 export type GetInventoryForProductFailure = {
   _type: 'failure';
   _failureType: 'GetInventoryForProductFailure';
   productId: string;
-  failure: IntegrationError;
+  failure: ProductNotFoundFailure | DatabaseConnectionError;
 };
 
 type GetInventoryForProductSuccess = {
@@ -20,7 +26,7 @@ type GetInventoryForProductResponse =
 export type InventoryConnector = {
   /**
    * Get the inventory level for a product. Failure modes include the product not
-   * being found, and integration errors.
+   * being found, and database not being available at all.
    */
   getInventoryForProduct: (
     productId: string,

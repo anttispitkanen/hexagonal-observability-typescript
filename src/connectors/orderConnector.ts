@@ -1,4 +1,4 @@
-import { IntegrationError } from './common';
+import { DatabaseConnectionError } from './common';
 
 type CreateOrderPayload = {
   productId: string;
@@ -14,7 +14,8 @@ type CreateOrderPayload = {
 export type CreateOrderFailure = {
   _type: 'failure';
   _failureType: 'CreateOrderFailure';
-  failure: IntegrationError;
+  paymentTransactionId: string;
+  failure: DatabaseConnectionError;
 };
 
 type CreateOrderSuccess = {

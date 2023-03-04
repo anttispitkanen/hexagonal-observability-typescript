@@ -92,6 +92,10 @@ export const createPayService = (
      */
     const pspResponse = await pspConnector.makePayment(product.price);
 
+    /**
+     * If the payment failed, we could inspect the error and retry in certain cases,
+     * like if the PSP was down. But for now we just return a failure response.
+     */
     if (pspResponse._type === 'failure') {
       return pspResponse;
     }
@@ -107,7 +111,9 @@ export const createPayService = (
     });
 
     /**
-     * If the order creation failed, we return a failure response.
+     * If the order creation failed, we return a failure response. We should probably
+     * also void the payment in the PSP's end, but since this example is not realistic
+     * anyway, let's just return the failure response.
      */
     if (orderResponse._type === 'failure') {
       return orderResponse;
